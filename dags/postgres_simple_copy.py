@@ -14,26 +14,31 @@ dag = DAG('postgres_simple_copy',
           tags=['hdl_project', 'postgres'])
 
 
-def copy_db():
-    user_manager = PostgresHook(postgres_conn_id='user_manager')
-    user_manager_conn = user_manager.get_conn()
-    user_manager_cursor = user_manager_conn.cursor()
+def copy_table(src_conn_id, dst_conn_id, table):
+    src = PostgresHook(postgres_conn_id=src_conn_id)
+    src_conn = src.get_conn()
+    src_cursor = src_conn.cursor()
 
-    copy_user_manager = PostgresHook(postgres_conn_id='copy_user_manager')
-    copy_user_manager_conn = copy_user_manager.get_conn()
-    copy_user_manager_cursor = copy_user_manager_conn.cursor()
+    dst = PostgresHook(postgres_conn_id=dst_conn_id)
+    dst_conn = dst.get_conn()
+    dst_cursor = dst_conn.cursor()
 
-    copy_user_manager_cursor.execute('SELECT MAX(id) FROM users_user;')
-    last_migrated_id = copy_user_manager_cursor.fetchone()[0]
+    dst_cursor.execute('SELECT MAX(id) FROM %s;', [table])
+    last_migrated_id = dst_cursor.fetchone()[0]
     if last_migrated_id is None:
         last_migrated_id = 0
 
-    user_manager_cursor.execute('SELECT * FROM users_user WHERE id > %s;', [last_migrated_id])
-    copy_user_manager.insert_rows(table='users_user', rows=user_manager_cursor)
+    src_cursor.execute('SELECT * FROM %s WHERE id > %s;', [table, last_migrated_id])
+    dst.insert_rows(table=table, rows=src_cursor)
 
 
-run_this = PythonOperator(
+copy_users_user_table = PythonOperator(
     task_id='copy_users_user_table',
-    python_callable=copy_db,
+    python_callable=copy_table,
+    op_kwargs={
+        'src_conn_id': 'user_manager',
+        'dst_conn_id': 'copy_user_manager',
+        'table': 'users_user'
+    },
     dag=dag,
 )
